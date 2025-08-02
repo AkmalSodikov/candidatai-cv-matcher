@@ -62,7 +62,7 @@ export default function App() {
             if (typeof value === 'object') return value !== null;
             return false;
           })
-          .map(([key]) => key.toLowerCase());
+          .map(([key]) => key.toUpperCase());
 
         for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
           const page = await pdf.getPage(pageNumber);
@@ -75,9 +75,12 @@ export default function App() {
           const rawHeadings: Section[] = [];
           for (const item of content.items) {
             if ('str' in item) {
-              const lower = item.str.toLowerCase();
-              const matchedKey = jsonKeys.find((key) => lower.includes(key));
+              if (item.str === 'Education') {
+                console.log(item);
+              }
+              const matchedKey = jsonKeys.find((key) => item.str.includes(key)); // finds uppercase titles only
               if (matchedKey) {
+                console.log(matchedKey);
                 const transform = item.transform as number[];
                 const x = transform[4] * scale;
                 const y = viewport.height - transform[5] * scale;
@@ -85,7 +88,8 @@ export default function App() {
                 const width = viewport.width;
 
                 const label =
-                  matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1);
+                  matchedKey.charAt(0).toUpperCase() +
+                  matchedKey.slice(1).toLowerCase();
 
                 rawHeadings.push({
                   x,
@@ -103,7 +107,9 @@ export default function App() {
           for (let i = 0; i < sorted.length; i++) {
             const current = sorted[i];
             const next = sorted[i + 1];
-            const sectionHeight = next ? next.y - current.y : 150;
+            const sectionHeight = next
+              ? next.y - current.y
+              : viewport.height - current.y;
             newSections.push({ ...current, height: sectionHeight });
           }
         }
@@ -136,8 +142,8 @@ export default function App() {
               onChange={(e) => {
                 try {
                   setResumeData(JSON.parse(e.target.value));
-                } catch (err) {
-                  console.error('Invalid JSON');
+                } catch (e) {
+                  console.error('Invalid JSON:', e);
                 }
               }}
             />
