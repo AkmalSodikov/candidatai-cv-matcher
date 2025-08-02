@@ -23,7 +23,7 @@ type Section = {
 const PAGE_WIDTH = 600;
 
 export default function App() {
-  const [setNumPages] = useState<number>();
+  const [numPages, setNumPages] = useState<number>();
   const [sections, setSections] = useState<Section[]>([]);
   const [pageNumber] = useState(1);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
