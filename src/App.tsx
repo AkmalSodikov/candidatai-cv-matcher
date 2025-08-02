@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import { useEffect, useState } from 'react';
 import { Document, Page } from 'react-pdf';
 import { pdfjs } from 'react-pdf';
@@ -18,6 +16,7 @@ type Section = {
   y: number;
   width: number;
   height: number;
+  page: number;
 };
 
 const PAGE_WIDTH = 600;
@@ -25,7 +24,6 @@ const PAGE_WIDTH = 600;
 export default function App() {
   const [numPages, setNumPages] = useState<number>();
   const [sections, setSections] = useState<Section[]>([]);
-  const [pageNumber] = useState(1);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [resumeData, setResumeData] = useState<any>(null);
   const [showModal, setShowModal] = useState(true);
@@ -54,12 +52,8 @@ export default function App() {
         const typedArray = new Uint8Array(reader.result as ArrayBuffer);
         const loadingTask = pdfjsLib.getDocument({ data: typedArray });
         const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(pageNumber);
-        const originalViewport = page.getViewport({ scale: 1 });
-        const scale = PAGE_WIDTH / originalViewport.width;
-        const viewport = page.getViewport({ scale });
-
-        const content = await page.getTextContent();
+        const totalPages = pdf.numPages;
+        const newSections: Section[] = [];
 
         const jsonKeys = Object.entries(resumeData)
           .filter(([_, value]) => {
@@ -70,48 +64,58 @@ export default function App() {
           })
           .map(([key]) => key.toLowerCase());
 
-        const rawHeadings: Section[] = [];
+        for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const originalViewport = page.getViewport({ scale: 1 });
+          const scale = PAGE_WIDTH / originalViewport.width;
+          const viewport = page.getViewport({ scale });
 
-        for (const item of content.items) {
-          if ('str' in item) {
-            const lower = item.str.toLowerCase();
-            const matchedKey = jsonKeys.find((key) => lower.includes(key));
-            if (matchedKey) {
-              const transform = item.transform as number[];
-              const x = transform[4] * scale;
-              const y = viewport.height - transform[5] * scale;
-              const height = item.height * scale;
-              const width = viewport.width;
+          const content = await page.getTextContent();
 
-              const label =
-                matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1);
+          const rawHeadings: Section[] = [];
+          for (const item of content.items) {
+            if ('str' in item) {
+              const lower = item.str.toLowerCase();
+              const matchedKey = jsonKeys.find((key) => lower.includes(key));
+              if (matchedKey) {
+                const transform = item.transform as number[];
+                const x = transform[4] * scale;
+                const y = viewport.height - transform[5] * scale;
+                const height = item.height * scale;
+                const width = viewport.width;
 
-              rawHeadings.push({ x, y, width, height, label });
+                const label =
+                  matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1);
+
+                rawHeadings.push({
+                  x,
+                  y,
+                  width,
+                  height,
+                  label,
+                  page: pageNumber,
+                });
+              }
             }
+          }
+
+          const sorted = rawHeadings.sort((a, b) => a.y - b.y);
+          for (let i = 0; i < sorted.length; i++) {
+            const current = sorted[i];
+            const next = sorted[i + 1];
+            const sectionHeight = next ? next.y - current.y : 150;
+            newSections.push({ ...current, height: sectionHeight });
           }
         }
 
-        const sorted = rawHeadings.sort((a, b) => a.y - b.y);
-
-        const finalSections: Section[] = [];
-        for (let i = 0; i < sorted.length; i++) {
-          const current = sorted[i];
-          const next = sorted[i + 1];
-          const sectionHeight = next ? next.y - current.y : 150;
-          finalSections.push({ ...current, height: sectionHeight });
-        }
-
-        setSections(finalSections);
+        setSections(newSections);
+        setNumPages(totalPages);
       };
       reader.readAsArrayBuffer(pdfFile);
     };
 
     extractText();
-  }, [pdfFile, resumeData, pageNumber]);
-
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
-  }
+  }, [pdfFile, resumeData]);
 
   return (
     <div className="flex w-full h-screen">
@@ -151,7 +155,7 @@ export default function App() {
 
       <div className="w-1/2 overflow-auto text-xs font-mono whitespace-pre-wrap p-2">
         {resumeData &&
-          Object.entries(resumeData).map(([key, value], index) => (
+          Object.entries(resumeData).map(([key, value]) => (
             <div className={`${sectionColors[key]}`} key={key}>
               <span className={`font-bold ${sectionColors[key]}`}>"{key}"</span>
               :{' '}
@@ -171,27 +175,31 @@ export default function App() {
           ))}
       </div>
 
-      <div className="relative w-1/2 flex justify-center items-start pt-4">
+      <div className="relative w-1/2 flex flex-col items-center pt-4 overflow-auto">
         {pdfFile && (
-          <Document file={pdfFile} onLoadSuccess={onDocumentLoadSuccess}>
-            <div className="relative">
-              <Page pageNumber={pageNumber} width={PAGE_WIDTH} />
-              {sections.map((section, index) => (
-                <div
-                  key={index}
-                  className={`absolute pointer-events-none border-2 ${getColor(
-                    section.label
-                  )}`}
-                  style={{
-                    left: `${section.x}px`,
-                    top: `${section.y}px`,
-                    width: `${section.width}px`,
-                    height: `${section.height}px`,
-                  }}
-                  title={section.label}
-                />
-              ))}
-            </div>
+          <Document file={pdfFile}>
+            {Array.from(new Array(numPages), (_, index) => (
+              <div className="relative" key={index}>
+                <Page pageNumber={index + 1} width={PAGE_WIDTH} />
+                {sections
+                  .filter((s) => s.page === index + 1)
+                  .map((section, idx) => (
+                    <div
+                      key={idx}
+                      className={`absolute pointer-events-none border-2 ${getColor(
+                        section.label
+                      )}`}
+                      style={{
+                        left: `${section.x}px`,
+                        top: `${section.y}px`,
+                        width: `${section.width}px`,
+                        height: `${section.height}px`,
+                      }}
+                      title={section.label}
+                    />
+                  ))}
+              </div>
+            ))}
           </Document>
         )}
       </div>
